@@ -111,6 +111,10 @@ pub mod native_binary64;
 
 pub mod product;
 
+// Local experimental/custom radix implementations (used by examples).
+// Not part of the upstream tfhe-ntt public API.
+pub mod custum_radix;
+
 // Fn arguments are (simd, z0, z1, w, w_shoup, p, neg_p, two_p)
 trait Butterfly<S: Copy, V: Copy>: Copy + Fn(S, V, V, V, V, V, V, V) -> (V, V) {}
 impl<F: Copy + Fn(S, V, V, V, V, V, V, V) -> (V, V), S: Copy, V: Copy> Butterfly<S, V> for F {}

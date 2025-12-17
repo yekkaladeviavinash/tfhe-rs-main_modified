@@ -25,6 +25,17 @@ fn mul_mod(a: u32, b: u32, p: u32) -> u32 {
     ((a as u64 * b as u64) % (p as u64)) as u32
 }
 
+#[inline(always)]
+fn mul_mod_counted(a: u32, b: u32, p: u32, stats: &mut MultStats) -> u32 {
+    let r = mul_mod(a, b, p);
+    if a != 0 && b != 0 {
+        stats.nonzero_mults += 1;
+    } else {
+        stats.skipped_mults += 1;
+    }
+    r
+}
+
 
 fn pow_mod(mut base: u32, mut exp: u32, p: u32) -> u32 {
     let mut res: u32 = 1;
@@ -111,9 +122,7 @@ pub fn fft_radix4_recursive_mut(a: &mut [u32], twiddles: &[u32], p: u32, stats: 
         let t3 = sub_mod(x1, x3, p);
         
         let w = twiddles[1];
-        let t3_rotated = mul_mod(w, t3, p);
-        let nz_1 = (t3!=0) as usize;
-        stats.nonzero_mults += nz_1;
+        let t3_rotated = mul_mod_counted(w, t3, p, stats);
         
         a[0] = add_mod(t0, t2, p);
         a[1] = add_mod(t1, t3_rotated, p);
@@ -156,11 +165,9 @@ pub fn fft_radix4_recursive_mut(a: &mut [u32], twiddles: &[u32], p: u32, stats: 
         let w2 = twiddles[(2*k) % n];
         let w3 = twiddles[(3*k) % n];
         
-        let t1 = mul_mod(w1, a1[k], p);
-        let t2 = mul_mod(w2, a2[k], p);
-        let t3 = mul_mod(w3, a3[k], p);
-        let nz = (a1[k] != 0) as usize + (a2[k] != 0) as usize + (a3[k] != 0) as usize;
-        stats.nonzero_mults += nz;
+        let t1 = mul_mod_counted(w1, a1[k], p, stats);
+        let t2 = mul_mod_counted(w2, a2[k], p, stats);
+        let t3 = mul_mod_counted(w3, a3[k], p, stats);
         
         // Radix-4 butterfly
         let b0 = add_mod(a0[k], t2, p);
@@ -170,8 +177,7 @@ pub fn fft_radix4_recursive_mut(a: &mut [u32], twiddles: &[u32], p: u32, stats: 
         
         // Apply n/4 twiddle rotation to b3
         let w_n4 = twiddles[quarter];
-        let b3_rot = mul_mod(w_n4, b3, p);
-        stats.nonzero_mults += 1;
+        let b3_rot = mul_mod_counted(w_n4, b3, p, stats);
         
         // Output at positions k, k+n/4, k+n/2, k+3n/4
         a[k] = add_mod(b0, b2, p);
@@ -217,10 +223,7 @@ pub fn fft_radix2_recursive_mut(a: &mut [u32], twiddles: &[u32], p: u32, stats: 
 
     // combine using top-level twiddles: ω^k
     for k in 0..half {
-        let t = mul_mod(twiddles[k], odd[k],  p);
-        let nz = (odd[k] != 0) as usize;
-        //println!("value of nz not 2={}",nz);
-        stats.nonzero_mults += nz;
+        let t = mul_mod_counted(twiddles[k], odd[k], p, stats);
         a[k]      = add_mod(even[k], t, p);
         a[k+half] = sub_mod(even[k], t, p);
     }
@@ -272,16 +275,12 @@ pub fn fft_split_radix_recursive_mut(a: &mut [u32], tw: &[u32], p: u32, stats: &
         let w_3k = tw[(3 * k) % n];
 
         // multiply children by their twiddles
-        let t1 = mul_mod(w_k,a1[k], p);    // W^k * O1[k]
-        let t2 = mul_mod(w_3k,a2[k], p);   // W^{3k} * O2[k]
-        let nz = (a1[k] != 0) as usize + (a2[k] != 0) as usize;
-        stats.nonzero_mults += nz;
+        let t1 = mul_mod_counted(w_k, a1[k], p, stats);    // W^k * O1[k]
+        let t2 = mul_mod_counted(w_3k, a2[k], p, stats);   // W^{3k} * O2[k]
 
         let sum = add_mod(t1, t2, p);       // t1 + t2
         let diff = sub_mod(t1, t2, p);      // t1 - t2
-        let jdiff = mul_mod(j,diff, p);    // J * (t1 - t2)
-        let nz = (diff != 0) as usize;
-        stats.nonzero_mults += nz;
+        let jdiff = mul_mod_counted(j, diff, p, stats);    // J * (t1 - t2)
 
         let u0 = a0[k];             // E[k]
         let u1 = a0[k + n4];        // E[k + N/4]
@@ -344,25 +343,25 @@ pub fn ifft_radix4_recursive_mut(a: &mut [u32], inv_twiddles: &[u32], p: u32, n_
 
     // combine using inverse twiddles (mirrors forward combine)
     for i in 0..quarter {
-        let t1 = mul_mod(inv_twiddles[i % n], a1[i], p);
-        let t2 = mul_mod(inv_twiddles[(2*i) % n], a2[i], p);
-        let t3 = mul_mod(inv_twiddles[(3*i) % n], a3[i], p);
+        let t1 = mul_mod_counted(inv_twiddles[i % n], a1[i], p, stats);
+        let t2 = mul_mod_counted(inv_twiddles[(2*i) % n], a2[i], p, stats);
+        let t3 = mul_mod_counted(inv_twiddles[(3*i) % n], a3[i], p, stats);
 
         let y0 = add_mod(add_mod(a0[i], t1, p), add_mod(t2, t3, p), p);
 
-        let t1 = mul_mod(inv_twiddles[(i + quarter) % n], a1[i], p);
-        let t2 = mul_mod(inv_twiddles[(2*(i + quarter)) % n], a2[i], p);
-        let t3 = mul_mod(inv_twiddles[(3*(i + quarter)) % n], a3[i], p);
+        let t1 = mul_mod_counted(inv_twiddles[(i + quarter) % n], a1[i], p, stats);
+        let t2 = mul_mod_counted(inv_twiddles[(2*(i + quarter)) % n], a2[i], p, stats);
+        let t3 = mul_mod_counted(inv_twiddles[(3*(i + quarter)) % n], a3[i], p, stats);
         let y1 = add_mod(add_mod(a0[i], t1, p), add_mod(t2, t3, p), p);
 
-        let t1 = mul_mod(inv_twiddles[(i + 2*quarter) % n], a1[i], p);
-        let t2 = mul_mod(inv_twiddles[(2*(i + 2*quarter)) % n], a2[i], p);
-        let t3 = mul_mod(inv_twiddles[(3*(i + 2*quarter)) % n], a3[i], p);
+        let t1 = mul_mod_counted(inv_twiddles[(i + 2*quarter) % n], a1[i], p, stats);
+        let t2 = mul_mod_counted(inv_twiddles[(2*(i + 2*quarter)) % n], a2[i], p, stats);
+        let t3 = mul_mod_counted(inv_twiddles[(3*(i + 2*quarter)) % n], a3[i], p, stats);
         let y2 = add_mod(add_mod(a0[i], t1, p), add_mod(t2, t3, p), p);
 
-        let t1 = mul_mod(inv_twiddles[(i + 3*quarter) % n], a1[i], p);
-        let t2 = mul_mod(inv_twiddles[(2*(i + 3*quarter)) % n], a2[i], p);
-        let t3 = mul_mod(inv_twiddles[(3*(i + 3*quarter)) % n], a3[i], p);
+        let t1 = mul_mod_counted(inv_twiddles[(i + 3*quarter) % n], a1[i], p, stats);
+        let t2 = mul_mod_counted(inv_twiddles[(2*(i + 3*quarter)) % n], a2[i], p, stats);
+        let t3 = mul_mod_counted(inv_twiddles[(3*(i + 3*quarter)) % n], a3[i], p, stats);
         let y3 = add_mod(add_mod(a0[i], t1, p), add_mod(t2, t3, p), p);
 
         a[i] = y0;
