@@ -99,157 +99,133 @@ fn make_twiddles_from_root(root: u32, n: usize, p: u32) -> Vec<u32> {
 }
 
 
-pub fn fft_radix4_recursive_mut(a: &mut [u32], twiddles: &[u32], p: u32, stats: &mut MultStats) {
+pub fn fft_radix4_recursive_mut(
+    a: &mut [u32],
+    twiddles: &[u32],
+    p: u32,
+    stats: &mut MultStats,
+) {
     let n = a.len();
-    if n == 1 { return; }
-   
-    if n == 2 {
-        // let nz = (a[1] != 0) as usize;
-        // stats.nonzero_mults += nz;
-        let tmp = a[0];
-        a[0] = add_mod(a[0], a[1], p);
-        a[1] = sub_mod(tmp, a[1], p);
+    if n == 1 {
         return;
     }
-   
-    if n == 4 {
-        let x0 = a[0];
-        let x1 = a[1];
-        let x2 = a[2];
-        let x3 = a[3];
-       
-        let t0 = add_mod(x0, x2, p);
-        let t1 = sub_mod(x0, x2, p);
-        let t2 = add_mod(x1, x3, p);
-        let t3 = sub_mod(x1, x3, p);
-       
-        let w = twiddles[1];
-        let t3_rotated = mul_mod(w, t3, p);
-        let nz_1 = (t3!=0) as usize;
-        stats.nonzero_mults += nz_1;
-       
-        a[0] = add_mod(t0, t2, p);
-        a[1] = add_mod(t1, t3_rotated, p);
-        a[2] = sub_mod(t0, t2, p);
-        a[3] = sub_mod(t1, t3_rotated, p);
+
+    if n == 2 {
+        let t = a[0];
+        a[0] = add_mod(a[0], a[1], p);
+        a[1] = sub_mod(t, a[1], p);
         return;
     }
 
     let quarter = n / 4;
-   
-    // Split into 4 sub-arrays (stride-4)
+
     let mut a0 = vec![0u32; quarter];
     let mut a1 = vec![0u32; quarter];
     let mut a2 = vec![0u32; quarter];
     let mut a3 = vec![0u32; quarter];
-   
+
     for i in 0..quarter {
-        a0[i] = a[4*i];
-        a1[i] = a[4*i + 1];
-        a2[i] = a[4*i + 2];
-        a3[i] = a[4*i + 3];
+        a0[i] = a[4 * i];
+        a1[i] = a[4 * i + 1];
+        a2[i] = a[4 * i + 2];
+        a3[i] = a[4 * i + 3];
     }
-   
-    // Twiddle table for child FFTs: tw4[k] = twiddles[4k]
+
     let mut tw4 = vec![0u32; quarter];
     for k in 0..quarter {
         tw4[k] = twiddles[(4 * k) % n];
     }
-   
-    // Recurse
+
     fft_radix4_recursive_mut(&mut a0, &tw4, p, stats);
     fft_radix4_recursive_mut(&mut a1, &tw4, p, stats);
     fft_radix4_recursive_mut(&mut a2, &tw4, p, stats);
     fft_radix4_recursive_mut(&mut a3, &tw4, p, stats);
-   
-    // Combine using top-level twiddles
+
+    let w_n4 = twiddles[quarter];
+
     for k in 0..quarter {
-        // Apply twiddle factors: ω^k, ω^(2k), ω^(3k)
         let w1 = twiddles[k];
-        let w2 = twiddles[(2*k) % n];
-        let w3 = twiddles[(3*k) % n];
-       
+        let w2 = twiddles[(2 * k) % n];
+        let w3 = twiddles[(3 * k) % n];
+
         let t1 = mul_mod(w1, a1[k], p);
         let t2 = mul_mod(w2, a2[k], p);
         let t3 = mul_mod(w3, a3[k], p);
-        let nz = (a1[k] != 0) as usize + (a2[k] != 0) as usize + (a3[k] != 0) as usize;
-        stats.nonzero_mults += nz;
-       
-        // Radix-4 butterfly
+
+        stats.nonzero_mults +=
+            (a1[k] != 0) as usize +
+            (a2[k] != 0) as usize +
+            (a3[k] != 0) as usize;
+
         let b0 = add_mod(a0[k], t2, p);
         let b1 = sub_mod(a0[k], t2, p);
         let b2 = add_mod(t1, t3, p);
         let b3 = sub_mod(t1, t3, p);
-       
-        // Apply n/4 twiddle rotation to b3
-        let w_n4 = twiddles[quarter];
+
         let b3_rot = mul_mod(w_n4, b3, p);
-        stats.nonzero_mults += 1;
-       
-        // Output at positions k, k+n/4, k+n/2, k+3n/4
-        a[k] = add_mod(b0, b2, p);
-        a[k + quarter] = add_mod(b1, b3_rot, p);
-        a[k + 2*quarter] = sub_mod(b0, b2, p);
-        a[k + 3*quarter] = sub_mod(b1, b3_rot, p);
+        stats.nonzero_mults += (b3 != 0) as usize;
+
+        a[k]               = add_mod(b0, b2, p);
+        a[k + quarter]     = add_mod(b1, b3_rot, p);
+        a[k + 2 * quarter] = sub_mod(b0, b2, p);
+        a[k + 3 * quarter] = sub_mod(b1, b3_rot, p);
     }
 }
 
 
 
-pub fn fft_radix2_recursive_mut(a: &mut [u32], twiddles: &[u32], p: u32, stats: &mut MultStats) {
+pub fn fft_radix2_recursive_mut(
+    a: &mut [u32],
+    twiddles: &[u32],
+    p: u32,
+    stats: &mut MultStats,
+) {
     let n = a.len();
-    if n == 1 { return; }
-    if n == 2 {
-        // let nz = (a[1] != 0) as usize;
-        // //println!("value of nz={}",nz);
-        // stats.nonzero_mults += nz;
-        let tmp = a[0];
-        a[0] = add_mod(a[0], a[1], p);
-        a[1] = sub_mod(tmp, a[1], p);
-       
+    if n == 1 {
         return;
     }
 
     let half = n / 2;
 
-    // split even / odd
     let mut even = vec![0u32; half];
     let mut odd  = vec![0u32; half];
+
     for i in 0..half {
-        even[i] = a[2*i];
-        odd[i]  = a[2*i + 1];
+        even[i] = a[2 * i];
+        odd[i]  = a[2 * i + 1];
     }
 
-    // correct twiddle table for child FFTs: tw2[k] = twiddles[2k]
     let mut tw2 = vec![0u32; half];
     for k in 0..half {
         tw2[k] = twiddles[(2 * k) % n];
     }
 
-    // recurse
     fft_radix2_recursive_mut(&mut even, &tw2, p, stats);
     fft_radix2_recursive_mut(&mut odd,  &tw2, p, stats);
 
-    // combine using top-level twiddles: ω^k
     for k in 0..half {
-        let t = mul_mod(twiddles[k], odd[k],  p);
-        let nz = (odd[k] != 0) as usize;
-        //println!("value of nz not 2={}",nz);
-        stats.nonzero_mults += nz;
-        a[k]      = add_mod(even[k], t, p);
-        a[k+half] = sub_mod(even[k], t, p);
+        let t = mul_mod(twiddles[k], odd[k], p);
+        stats.nonzero_mults += (odd[k] != 0) as usize;
+
+        a[k]        = add_mod(even[k], t, p);
+        a[k + half] = sub_mod(even[k], t, p);
     }
 }
 
 
 
-pub fn fft_split_radix_recursive_mut(a: &mut [u32], tw: &[u32], p: u32, stats: &mut MultStats) {
+pub fn fft_split_radix_recursive_mut(
+    a: &mut [u32],
+    tw: &[u32],
+    p: u32,
+    stats: &mut MultStats,
+) {
     let n = a.len();
-    if n == 1 { return; }
+    if n == 1 {
+        return;
+    }
 
     if n == 2 {
-        // let nz = (a[1] != 0) as usize;
-        // stats.nonzero_mults += nz;
         let t = a[0];
         a[0] = add_mod(a[0], a[1], p);
         a[1] = sub_mod(t, a[1], p);
@@ -259,55 +235,58 @@ pub fn fft_split_radix_recursive_mut(a: &mut [u32], tw: &[u32], p: u32, stats: &
     let n2 = n / 2;
     let n4 = n / 4;
 
-    // split inputs
-    let mut a0 = vec![0u32; n2]; // even indices
-    let mut a1 = vec![0u32; n4]; // indices 1 mod 4
-    let mut a2 = vec![0u32; n4]; // indices 3 mod 4
+    let mut a0 = vec![0u32; n2];
+    let mut a1 = vec![0u32; n4];
+    let mut a2 = vec![0u32; n4];
 
-    for i in 0..n2 { a0[i] = a[2*i]; }
-    for i in 0..n4 { a1[i] = a[4*i + 1]; a2[i] = a[4*i + 3]; }
+    for i in 0..n2 {
+        a0[i] = a[2 * i];
+    }
+    for i in 0..n4 {
+        a1[i] = a[4 * i + 1];
+        a2[i] = a[4 * i + 3];
+    }
 
-    // build child twiddle tables (indices multiply by 2 and 4)
     let mut tw2 = vec![0u32; n2];
-    for k in 0..n2 { tw2[k] = tw[(2 * k) % n]; }
+    for k in 0..n2 {
+        tw2[k] = tw[(2 * k) % n];
+    }
 
     let mut tw4 = vec![0u32; n4];
-    for k in 0..n4 { tw4[k] = tw[(4 * k) % n]; }
+    for k in 0..n4 {
+        tw4[k] = tw[(4 * k) % n];
+    }
 
-    // recurse
     fft_split_radix_recursive_mut(&mut a0, &tw2, p, stats);
     fft_split_radix_recursive_mut(&mut a1, &tw4, p, stats);
     fft_split_radix_recursive_mut(&mut a2, &tw4, p, stats);
 
-    // quarter-rotation constant J = W^{N/4} (order 4 element; J^2 = -1)
     let j = tw[n4 % n];
 
-    // combine: for k in 0..N/4
     for k in 0..n4 {
-        // W^k and W^{3k} (top-level twiddles)
-        let w_k = tw[k % n];
+        let w_k  = tw[k % n];
         let w_3k = tw[(3 * k) % n];
 
-        // multiply children by their twiddles
-        let t1 = mul_mod(w_k,a1[k], p);    // W^k * O1[k]
-        let t2 = mul_mod(w_3k,a2[k], p);   // W^{3k} * O2[k]
-        let nz = (a1[k] != 0) as usize + (a2[k] != 0) as usize;
-        stats.nonzero_mults += nz;
+        let t1 = mul_mod(w_k,  a1[k], p);
+        let t2 = mul_mod(w_3k, a2[k], p);
 
-        let sum = add_mod(t1, t2, p);       // t1 + t2
-        let diff = sub_mod(t1, t2, p);      // t1 - t2
-        let jdiff = mul_mod(j,diff, p);    // J * (t1 - t2)
-        let nz = (diff != 0) as usize;
-        stats.nonzero_mults += nz;
+        stats.nonzero_mults +=
+            (a1[k] != 0) as usize +
+            (a2[k] != 0) as usize;
 
-        let u0 = a0[k];             // E[k]
-        let u1 = a0[k + n4];        // E[k + N/4]
+        let sum  = add_mod(t1, t2, p);
+        let diff = sub_mod(t1, t2, p);
 
-        // outputs
-        a[k]             = add_mod(u0, sum, p);        // X[k] = E[k] + sum
-        a[k + n4]        = add_mod(u1, jdiff, p);      // X[k+N/4] = E[k+N/4] + J*(t1 - t2)
-        a[k + n2]        = sub_mod(u0, sum, p);        // X[k+N/2] = E[k] - sum
-        a[k + n2 + n4]   = sub_mod(u1, jdiff, p);      // X[k+3N/4] = E[k+N/4] - J*(t1 - t2)
+        let jdiff = mul_mod(j, diff, p);
+        stats.nonzero_mults += (diff != 0) as usize;
+
+        let u0 = a0[k];
+        let u1 = a0[k + n4];
+
+        a[k]           = add_mod(u0, sum, p);
+        a[k + n4]      = add_mod(u1, jdiff, p);
+        a[k + n2]      = sub_mod(u0, sum, p);
+        a[k + n2 + n4] = sub_mod(u1, jdiff, p);
     }
 }
 
