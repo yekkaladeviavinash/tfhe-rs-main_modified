@@ -31,6 +31,7 @@ import csv
 import os
 from collections import Counter
 
+import joblib
 import numpy as np
 
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, confusion_matrix
@@ -117,7 +118,7 @@ def try_train_xgboost(X_train, y_train_enc, X_test, y_test_enc, le: LabelEncoder
         pred_enc = clf.predict(X_test)
         y_pred = le.inverse_transform(pred_enc)
         y_true = le.inverse_transform(y_test_enc)
-        return ("XGBoost", y_true, y_pred)
+        return ("XGBoost", y_true, y_pred, clf)
 
     except ModuleNotFoundError:
         return None
@@ -141,11 +142,13 @@ def train_hist_gb(X_train, y_train_enc, X_test, y_test_enc, le: LabelEncoder):
     pred_enc = clf.predict(X_test)
     y_pred = le.inverse_transform(pred_enc)
     y_true = le.inverse_transform(y_test_enc)
-    return ("HistGradientBoosting", y_true, y_pred)
+    return ("HistGradientBoosting", y_true, y_pred, clf)
 
 
 def main() -> int:
-    dataset_path = os.path.join("tfhe-ntt", "examples", "model", "Dataset.csv")
+    # Use path relative to script location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    dataset_path = os.path.join(script_dir, "Dataset.csv")
 
     X, y = load_xy(dataset_path)
     print("Loaded rows with non-empty target:", X.shape[0])
@@ -166,6 +169,9 @@ def main() -> int:
         stratify=y_enc,
     )
 
+    # Track models and their balanced accuracy scores
+    models = {}
+
     # Random Forest
     rf = RandomForestClassifier(
         n_estimators=800,
@@ -176,6 +182,8 @@ def main() -> int:
     )
     rf.fit(X_train, y_train)
     pred_rf = rf.predict(X_test)
+    rf_bal_acc = balanced_accuracy_score(y_test, pred_rf)
+    models["RandomForest"] = (rf, rf_bal_acc)
     print_metrics(
         "RandomForest",
         le.inverse_transform(y_test),
@@ -186,12 +194,31 @@ def main() -> int:
     # Gradient boosting model
     xgb_res = try_train_xgboost(X_train, y_train, X_test, y_test, le)
     if xgb_res is not None:
-        name, y_true, y_pred = xgb_res
+        name, y_true, y_pred, clf = xgb_res
+        gb_bal_acc = balanced_accuracy_score(y_true, y_pred)
+        models[name] = (clf, gb_bal_acc)
         print_metrics(name, y_true, y_pred, labels_order)
     else:
-        name, y_true, y_pred = train_hist_gb(X_train, y_train, X_test, y_test, le)
+        name, y_true, y_pred, clf = train_hist_gb(X_train, y_train, X_test, y_test, le)
+        gb_bal_acc = balanced_accuracy_score(y_true, y_pred)
+        models[name] = (clf, gb_bal_acc)
         print_metrics(name, y_true, y_pred, labels_order)
         print("\nNote: xgboost is not installed; used scikit-learn HistGradientBoosting instead.")
+
+    # Find and save the best model
+    best_name = max(models, key=lambda k: models[k][1])
+    best_model, best_score = models[best_name]
+
+    # Save best model and label encoder
+    model_path = os.path.join(script_dir, "best_model.joblib")
+    encoder_path = os.path.join(script_dir, "label_encoder.joblib")
+
+    joblib.dump(best_model, model_path)
+    joblib.dump(le, encoder_path)
+
+    print(f"\n=== Best Model: {best_name} (balanced_accuracy={best_score:.6f}) ===")
+    print(f"Model saved to: {model_path}")
+    print(f"Label encoder saved to: {encoder_path}")
 
     return 0
 

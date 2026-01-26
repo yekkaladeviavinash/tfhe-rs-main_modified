@@ -33,6 +33,10 @@ csv = "1.3"
 name = "ntt"
 harness = false
 
+[[example]]
+name = "test_mul"
+path = "examples/model/test_mul.rs"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--html-in-header", "katex-header.html", "--cfg", "docsrs"]

@@ -19,4 +19,8 @@ pub use fwd::{
     fft_radix4_recursive_mut,
     fft_radix2_recursive_mut,
     fft_split_radix_recursive_mut,
+    ifft_radix4_recursive_mut,
+    ifft_radix2_recursive_mut,
+    ifft_split_radix_recursive_mut,
+    MultStats,
  };
