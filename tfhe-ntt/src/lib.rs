@@ -89,6 +89,8 @@ mod u256_impl;
 pub mod fastdiv;
 /// 32bit negacyclic NTT for a prime modulus.
 pub mod prime32;
+/// 32bit negacyclic NTT for a prime modulus (radix-4 scalar depth-first variant).
+pub mod prime32_r4;
 /// 64bit negacyclic NTT for a prime modulus.
 pub mod prime64;
 

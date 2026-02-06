@@ -1,10 +1,11 @@
 use rand::random;
+use std::time::Instant;
 use tfhe_ntt::prime32::Plan;
 
 fn main() {
     // define suitable NTT prime and polynomial size
     let p: u32 = 1073479681;
-    let polynomial_size = 1024;
+    let polynomial_size = 16384*2;
 
     // unwrapping is fine here because we know roots of unity exist for the combination
     // `(polynomial_size, p)`
@@ -34,6 +35,7 @@ fn main() {
     let mut rhs_ntt = rhs_poly;
 
     // convert to NTT domain
+    let start = Instant::now();
     plan.fwd(&mut lhs_ntt);
     plan.fwd(&mut rhs_ntt);
 
@@ -42,6 +44,8 @@ fn main() {
 
     // convert back to standard domain
     plan.inv(&mut lhs_ntt);
+    let duration = start.elapsed();
+    println!("Time for lines 37-44: {:?}", duration);
 
     // check that method 1 and method 2 give the same result
     assert_eq!(lhs_ntt, negacyclic_convolution);
