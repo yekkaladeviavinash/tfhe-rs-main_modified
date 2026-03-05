@@ -48,7 +48,8 @@ fn main() {
     writeln!(
         csv,
         "fft_size,radix2_wins,radix4_wins,radix8_wins,split_radix_wins,\
-         radix2_avg_ns,radix4_avg_ns,radix8_avg_ns,split_radix_avg_ns"
+         radix2_avg_ns,radix4_avg_ns,radix8_avg_ns,split_radix_avg_ns,\
+         radix2_plan_ns,radix4_plan_ns,radix8_plan_ns,split_radix_plan_ns"
     )
     .unwrap();
 
@@ -63,10 +64,17 @@ fn main() {
     for &n in &sizes {
         let base_n = if n <= BASE_N { n } else { BASE_N };
 
-        // -------- build plans --------
+        // -------- build plans (timed) --------
+        let start = Instant::now();
         let plan_r2 = Radix2Plan::new(n, BASE_ALGO, base_n);
+        let plan_r2_create_ns = start.elapsed().as_nanos() as u64;
+
+        let start = Instant::now();
         let plan_r4 = Radix4Plan::new(n, BASE_ALGO, base_n);
+        let plan_r4_create_ns = start.elapsed().as_nanos() as u64;
+
         // radix-8 = default Plan with the same base
+        let start = Instant::now();
         let plan_r8 = Plan::new(
             n,
             Method::UserProvided {
@@ -74,7 +82,13 @@ fn main() {
                 base_n,
             },
         );
+        let plan_r8_create_ns = start.elapsed().as_nanos() as u64;
+
+        let start = Instant::now();
         let plan_sr = SplitRadixPlan::new(n, BASE_ALGO, base_n);
+        let plan_sr_create_ns = start.elapsed().as_nanos() as u64;
+
+        let plan_create_ns = [plan_r2_create_ns, plan_r4_create_ns, plan_r8_create_ns, plan_sr_create_ns];
 
         // Scratch requirement: take the max across all plans.
         let scratch_req = plan_r2
@@ -213,9 +227,17 @@ fn main() {
 
         // -------- report --------
         println!("FFT size = {n}");
+        println!("  Plan creation times:");
         for i in 0..4 {
             println!(
-                "  {:>12}: wins = {:>5} / {NUM_POLYS}  |  avg = {:>10.1} ns",
+                "    {:>12}: {:>10} ns",
+                ALGO_NAMES[i], plan_create_ns[i]
+            );
+        }
+        println!("  FFT execution:");
+        for i in 0..4 {
+            println!(
+                "    {:>12}: wins = {:>5} / {NUM_POLYS}  |  avg = {:>10.1} ns",
                 ALGO_NAMES[i], wins[i], avg_ns[i]
             );
         }
@@ -223,7 +245,7 @@ fn main() {
 
         writeln!(
             csv,
-            "{},{},{},{},{},{:.1},{:.1},{:.1},{:.1}",
+            "{},{},{},{},{},{:.1},{:.1},{:.1},{:.1},{},{},{},{}",
             n,
             wins[0],
             wins[1],
@@ -233,6 +255,10 @@ fn main() {
             avg_ns[1],
             avg_ns[2],
             avg_ns[3],
+            plan_create_ns[0],
+            plan_create_ns[1],
+            plan_create_ns[2],
+            plan_create_ns[3],
         )
         .unwrap();
     }
